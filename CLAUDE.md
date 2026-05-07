@@ -76,43 +76,19 @@ If Obsidian isn't pointed at `/outputs/`, frontmatter and chart blocks still ren
 
 ## Writing under outputs/ from the Trading Cockpit
 
-If the env var `COCKPIT_PORT` is set, you are running inside the locally-hosted Trading Cockpit web app, which spawns me with `claude -p`. In that mode, claude's sandbox blocks `mkdir` and direct file creation outside the cwd — including `outputs/` subdirectories. **Use the cockpit's HTTP API for writes; do NOT try `mkdir`, `Write`, or `Edit` to create new files under outputs/.**
+If the MCP server **`cockpit`** is connected (you'll see it in your initial `system_init` event's `mcp_servers` list), you are running inside the locally-hosted Trading Cockpit web app, which spawns me with `claude -p`. In that mode, claude's sandbox blocks `mkdir`, `Write`, and `Edit` for files outside the cwd — so research reports under `outputs/` cannot be created with the normal tools.
 
-Endpoints (all on `http://127.0.0.1:$COCKPIT_PORT`, JSON request/response):
-- `POST /api/files/mkdir` — body `{"path":"outputs/<TICKER>"}` — recursive, idempotent.
-- `POST /api/files/write` — body `{"path":"outputs/<TICKER>/<file>.md","content":"…"}` — overwrites; auto-creates parent dirs; sandboxed to `outputs/`.
-- `GET /api/files/content?path=outputs/<TICKER>/<file>.md` — fetch back to confirm.
+**Use the cockpit MCP tools for ALL writes under `outputs/`. Do NOT try `Bash mkdir`, `Write`, or `Edit` for those paths.**
 
-Write recipe — heredoc into a shell variable, then jq for JSON-safe encoding:
+Tools provided by the `cockpit` MCP server:
+- **`cockpit_mkdir`** — args `{path: "outputs/<TICKER>"}`. Recursive, idempotent. Optional (write auto-creates parents).
+- **`cockpit_write_file`** — args `{path: "outputs/<TICKER>/<file>.md", content: "<full markdown>"}`. Overwrites if exists. Auto-creates parent dirs. Sandboxed to `outputs/`.
 
-```bash
-# Single-quoted heredoc tag prevents $-expansion inside the report content.
-content=$(cat <<'REPORT_END'
----
-ticker: F
-date: 2026-05-07
-skill: assess-company
-verdict: HOLD
-price: 11.50
-tags: [research]
----
+Both accept structured JSON arguments via the MCP tool-call mechanism — no shell escaping, no encoding tricks. Pass markdown content as a regular string; the tool layer handles the rest.
 
-# F report
+Verify a write afterwards by reading it back with the standard `Read` tool (read access to `outputs/` is allowed).
 
-…full markdown body here…
-REPORT_END
-)
-
-curl -sS -X POST -H 'Content-Type: application/json' \
-  -d "$(jq -n --arg p 'outputs/F/F-assess-company-2026-05-07.md' \
-              --arg c "$content" \
-              '{path:$p, content:$c}')" \
-  "http://127.0.0.1:$COCKPIT_PORT/api/files/write"
-```
-
-The `mkdir` step is optional — `write` auto-creates parent dirs — but useful for an empty-folder placeholder.
-
-When `COCKPIT_PORT` is **not** set (i.e., you're running interactively from the terminal, not through the cockpit), this section does not apply: use normal `Write` / `mkdir` directly.
+When the `cockpit` MCP server is **not** connected (i.e., you're running interactively from the terminal), this section does not apply: use normal `Write` / `mkdir` directly.
 
 ## Constraints
 - Never recommend a single position exceed 15% of total portfolio without flagging the concentration risk

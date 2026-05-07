@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import fs from "node:fs";
+import os from "node:os";
 import next from "next";
 import { WebSocketServer } from "ws";
 import { parse } from "node:url";
@@ -23,8 +25,32 @@ function resolveProjectRoot(): string {
   return path.resolve(process.cwd(), "..");
 }
 
+function writeMcpConfig(projectRoot: string): string {
+  // Generate an MCP config that points spawned `claude -p` subprocesses at
+  // our cockpit-side stdio MCP server. Uses absolute paths because claude's
+  // cwd is projectRoot, not web/.
+  const webRoot = process.cwd();
+  const tsxBin = path.join(webRoot, "node_modules", ".bin", "tsx");
+  const serverScript = path.join(webRoot, "lib", "mcp", "cockpit-server.ts");
+  const config = {
+    mcpServers: {
+      cockpit: {
+        command: tsxBin,
+        args: [serverScript],
+        env: {
+          COCKPIT_PROJECT_ROOT: projectRoot,
+        },
+      },
+    },
+  };
+  const out = path.join(os.tmpdir(), `cockpit-mcp-${process.pid}.json`);
+  fs.writeFileSync(out, JSON.stringify(config, null, 2), "utf8");
+  return out;
+}
+
 async function main() {
   const projectRoot = resolveProjectRoot();
+  const mcpConfigPath = writeMcpConfig(projectRoot);
   const app = next({ dev, dir: process.cwd(), hostname: HOST, port: PORT });
   await app.prepare();
   const handle = app.getRequestHandler();
@@ -36,6 +62,7 @@ async function main() {
     bridgeOpts: {
       cwd: projectRoot,
       hangTimeoutMs: parseInt(process.env.COCKPIT_HANG_TIMEOUT_MS ?? "60000", 10),
+      mcpConfigPath,
     },
   });
 
@@ -62,6 +89,8 @@ async function main() {
   httpServer.listen(PORT, HOST, () => {
     // eslint-disable-next-line no-console
     console.log(`[cockpit] http://${HOST}:${PORT}  (project: ${projectRoot})`);
+    // eslint-disable-next-line no-console
+    console.log(`[cockpit] mcp-config: ${mcpConfigPath}`);
   });
 
   const shutdown = async (sig: string) => {
@@ -71,6 +100,7 @@ async function main() {
     httpServer.close();
     await manager.shutdown();
     closeDb();
+    try { fs.unlinkSync(mcpConfigPath); } catch { /* ignore */ }
     process.exit(0);
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));

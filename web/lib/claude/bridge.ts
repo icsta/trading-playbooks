@@ -15,6 +15,12 @@ export type BridgeOpts = {
   cwd: string;
   /** Pass --resume <resumeId> to claude */
   resumeId?: string;
+  /**
+   * Absolute path to an MCP config JSON file. Forwarded to claude as
+   * --mcp-config <path> so the spawned subprocess connects to our
+   * cockpit-side MCP server (filesystem tools scoped to outputs/).
+   */
+  mcpConfigPath?: string;
   /** Kill the subprocess if no stdout for this long during a generation */
   hangTimeoutMs: number;
 };
@@ -59,6 +65,7 @@ export class ClaudeBridge extends EventEmitter<BridgeEventMap> {
         "--input-format", "stream-json",
         "--output-format", "stream-json",
         "--verbose",
+        ...(this.opts.mcpConfigPath ? ["--mcp-config", this.opts.mcpConfigPath] : []),
         ...(this.opts.resumeId ? ["--resume", this.opts.resumeId] : []),
       ];
 
