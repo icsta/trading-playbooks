@@ -32,17 +32,13 @@ function parseEvent(data: Record<string, unknown>): ClaudeEvent[] {
     return [{ kind: "unknown", raw: data }];
   }
 
-  // stream_event wraps content_block_delta when partial-message streaming is enabled.
-  // We currently spawn claude without that flag (only whole-message turns), so this
-  // branch is defensive — preserved for forward compatibility / fixture parity.
+  // stream_event wraps incremental deltas (text_delta, input_json_delta, etc.)
+  // when --include-partial-messages is on (which it is — see bridge.ts). We
+  // intentionally collapse all of these to `unknown` so the bridge's hang
+  // timer resets on each delta line (bridge.ts handleLine), but the UI keeps
+  // rendering only the eventual whole-message `assistant` turn — no double
+  // text from delta + final-message duplication.
   if (t === "stream_event") {
-    const ev = data.event as Record<string, unknown> | undefined;
-    if (ev?.type === "content_block_delta") {
-      const delta = ev.delta as Record<string, unknown> | undefined;
-      if (delta?.type === "text_delta") {
-        return [{ kind: "text_delta", text: (delta.text as string) ?? "" }];
-      }
-    }
     return [{ kind: "unknown", raw: data }];
   }
 

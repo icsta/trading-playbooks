@@ -46,6 +46,39 @@ describe("ClaudeBridge", () => {
     expect(bridge.sessionId).toBe("test-001");
   });
 
+  it("synthesizes default claude args including --include-partial-messages when opts.args is omitted", async () => {
+    // Same arg-dumper trick as the explicit-args test below, but here we want
+    // to capture what the bridge SYNTHESIZES (opts.args undefined). We point
+    // `command` at the dumper directly so the synthesized claude flags become
+    // the dumper's argv.
+    const argDumper = path.resolve(__dirname, "../../__fixtures__/arg-dumper.mjs");
+    const fs = await import("node:fs");
+    const dumperBody = `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)) + "\\n");\nprocess.exit(0);\n`;
+    fs.writeFileSync(argDumper, dumperBody, { mode: 0o755 });
+    const bridge = new ClaudeBridge({
+      command: argDumper,
+      cwd: process.cwd(),
+      mcpConfigPath: "/tmp/cockpit-mcp-test.json",
+      hangTimeoutMs: 5_000,
+    });
+    bridge.send("hi");
+    const { events } = await collectUntilExit(bridge);
+    const dumped = events
+      .filter((e) => e.kind === "unknown")
+      .map((e) => (e.kind === "unknown" ? e.raw : null))
+      .find((raw) => Array.isArray(raw)) as string[] | undefined;
+    if (!dumped) {
+      throw new Error("expected an unknown event whose raw is the dumper's argv array");
+    }
+    expect(dumped).toContain("--include-partial-messages");
+    expect(dumped).toContain("-p");
+    expect(dumped).toContain("--input-format");
+    expect(dumped).toContain("--output-format");
+    expect(dumped).toContain("stream-json");
+    expect(dumped).toContain("--mcp-config");
+    expect(dumped).toContain("/tmp/cockpit-mcp-test.json");
+  });
+
   it("respects explicit args[] and does not append --resume when one is provided", async () => {
     // The dumper prints its argv as a JSON array on stdout, then exits. The array
     // shape is not a known claude envelope, so the parser yields an `unknown` event

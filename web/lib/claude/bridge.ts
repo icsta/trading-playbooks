@@ -58,12 +58,17 @@ export class ClaudeBridge extends EventEmitter<BridgeEventMap> {
     }
 
     const command = this.opts.command ?? "claude";
+    // --include-partial-messages keeps the hang timer alive during long
+    // tool_use generation. Without it, stream-json emits one line per whole
+    // assistant turn, so generating a cockpit_write_file with a 30KB report
+    // body goes silent on stdout for >60s and trips hang_timeout mid-write.
     const args =
       this.opts.args ??
       [
         "-p",
         "--input-format", "stream-json",
         "--output-format", "stream-json",
+        "--include-partial-messages",
         "--verbose",
         ...(this.opts.mcpConfigPath ? ["--mcp-config", this.opts.mcpConfigPath] : []),
         ...(this.opts.resumeId ? ["--resume", this.opts.resumeId] : []),

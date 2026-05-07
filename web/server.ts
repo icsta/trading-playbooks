@@ -64,7 +64,7 @@ async function main() {
     db,
     bridgeOpts: {
       cwd: projectRoot,
-      hangTimeoutMs: parseInt(process.env.COCKPIT_HANG_TIMEOUT_MS ?? "60000", 10),
+      hangTimeoutMs: parseInt(process.env.COCKPIT_HANG_TIMEOUT_MS ?? "240000", 10),
       mcpConfigPath,
     },
   });

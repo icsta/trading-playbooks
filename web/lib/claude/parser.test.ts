@@ -65,16 +65,27 @@ describe("parseLine", () => {
     expect(events.some((e) => e.kind === "tool_use_start" && (e as any).name === "Bash")).toBe(true);
   });
 
-  it("parses synthetic stream_event content_block_delta into text_delta", () => {
+  it("collapses stream_event content_block_delta (text_delta) to unknown so the UI doesn't double-render with the whole-message assistant turn", () => {
     const line = JSON.stringify({
       type: "stream_event",
       event: { type: "content_block_delta", delta: { type: "text_delta", text: "hello" } },
     });
     const events = parseLine(line);
     expect(events).toHaveLength(1);
-    expect(events[0].kind).toBe("text_delta");
-    const e = events[0];
-    if (e.kind === "text_delta") expect(e.text).toBe("hello");
+    expect(events[0].kind).toBe("unknown");
+  });
+
+  it("collapses stream_event content_block_delta (input_json_delta) to unknown — hang-timer reset path during long tool_use generation", () => {
+    const line = JSON.stringify({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        delta: { type: "input_json_delta", partial_json: '{"path":"outputs/F/' },
+      },
+    });
+    const events = parseLine(line);
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe("unknown");
   });
 
   it("parses synthetic assistant text content as text_delta", () => {
