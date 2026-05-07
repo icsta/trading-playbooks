@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* JetBrains One Dark palette */
+    --bg: #282c34;
+    --chrome: #21252b;
+    --surface: #3e4451;
+    --text: #abb2bf;
+    --muted: #5c6370;
+    --primary: #61afef;
+    --success: #98c379;
+    --danger: #e06c75;
+    --warning: #e5c07b;
+    --accent: #c678dd;
+
+    /* shadcn-compatible aliases */
+    --background: var(--bg);
+    --foreground: var(--text);
+    --card: var(--chrome);
+    --card-foreground: var(--text);
+    --popover: var(--chrome);
+    --popover-foreground: var(--text);
+    --primary-foreground: #0a0e16;
+    --secondary: var(--surface);
+    --secondary-foreground: var(--text);
+    --muted-foreground: var(--muted);
+    --accent-foreground: var(--text);
+    --destructive: var(--danger);
+    --destructive-foreground: #0a0e16;
+    --border: var(--surface);
+    --input: var(--surface);
+    --ring: var(--primary);
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  html, body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  }
+  code, pre {
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  }
+}

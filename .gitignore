@@ -11,3 +11,8 @@ data/wishlist.csv
 data/accounts.yaml
 docs/superpowers/
 .obsidian/
+.superpowers/
+web/node_modules/
+web/.next/
+web/data/
+web/coverage/

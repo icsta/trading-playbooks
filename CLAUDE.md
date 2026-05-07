@@ -74,7 +74,28 @@ Use real values, not placeholders. If a field genuinely doesn't apply (e.g., `pr
 
 If Obsidian isn't pointed at `/outputs/`, frontmatter and chart blocks still render as plain markdown elsewhere, but Dataview queries won't run and charts won't render.
 
+## Writing under outputs/ from the Trading Cockpit
+
+If the MCP server **`cockpit`** is connected (you'll see it in your initial `system_init` event's `mcp_servers` list), you are running inside the locally-hosted Trading Cockpit web app, which spawns me with `claude -p`. In that mode, claude's sandbox blocks `mkdir`, `Write`, and `Edit` for files outside the cwd — so research reports under `outputs/` cannot be created with the normal tools.
+
+**Use the cockpit MCP tools for ALL writes under `outputs/`. Do NOT try `Bash mkdir`, `Write`, or `Edit` for those paths.**
+
+Tools provided by the `cockpit` MCP server:
+- **`cockpit_mkdir`** — args `{path: "outputs/<TICKER>"}`. Recursive, idempotent. Optional (write auto-creates parents).
+- **`cockpit_write_file`** — args `{path: "outputs/<TICKER>/<file>.md", content: "<full markdown>"}`. Overwrites if exists. Auto-creates parent dirs. Sandboxed to `outputs/`.
+
+Both accept structured JSON arguments via the MCP tool-call mechanism — no shell escaping, no encoding tricks. Pass markdown content as a regular string; the tool layer handles the rest.
+
+Verify a write afterwards by reading it back with the standard `Read` tool (read access to `outputs/` is allowed).
+
+When the `cockpit` MCP server is **not** connected (i.e., you're running interactively from the terminal), this section does not apply: use normal `Write` / `mkdir` directly.
+
 ## Constraints
 - Never recommend a single position exceed 15% of total portfolio without flagging the concentration risk
 - Always note if a recommendation would require taxable-account action that could trigger short-term capital gains
 - Do not factor in speculative catalysts without labeling them as speculative
+
+## Tool permission discipline
+- If a tool call is denied, treat one denial as final. Do not retry with variations (different paths, relative vs absolute, chained commands, splitting into smaller calls) hoping to slip past — the deny rule is intentional.
+- Surface the denial plainly and offer three options: (a) the user runs it manually, (b) the user updates `~/.claude/settings.json` to allow the pattern, or (c) abandon the operation. Then stop and wait.
+- Token cost and the appearance of evasion both go up with each retry; one clean denial + a short summary is the right shape.
