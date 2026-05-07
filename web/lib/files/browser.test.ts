@@ -123,4 +123,96 @@ describe("files browser sandbox", () => {
     const names = out.entries.map((e) => e.name);
     expect(names).not.toContain("leak.md");
   });
+
+  // ---------- mkdir ----------
+
+  it("mkdir creates a directory under outputs/", () => {
+    const b = createBrowser(projectRoot);
+    b.mkdir("outputs/G");
+    const stat = fs.statSync(path.join(projectRoot, "outputs", "G"));
+    expect(stat.isDirectory()).toBe(true);
+  });
+
+  it("mkdir is idempotent (no error if directory exists)", () => {
+    const b = createBrowser(projectRoot);
+    expect(() => b.mkdir("outputs/F")).not.toThrow();
+  });
+
+  it("mkdir creates nested paths recursively", () => {
+    const b = createBrowser(projectRoot);
+    b.mkdir("outputs/H/2026/Q2");
+    const stat = fs.statSync(path.join(projectRoot, "outputs", "H", "2026", "Q2"));
+    expect(stat.isDirectory()).toBe(true);
+  });
+
+  it("mkdir rejects paths outside outputs/", () => {
+    const b = createBrowser(projectRoot);
+    expect(() => b.mkdir("data")).toThrowError(/sandbox/);
+    expect(() => b.mkdir("../escape")).toThrowError(/sandbox/);
+  });
+
+  it("mkdir rejects absolute paths", () => {
+    const b = createBrowser(projectRoot);
+    expect(() => b.mkdir("/tmp/escape")).toThrowError(/sandbox/);
+  });
+
+  it("mkdir rejects empty path", () => {
+    const b = createBrowser(projectRoot);
+    expect(() => b.mkdir("")).toThrowError(/path_required/);
+  });
+
+  // ---------- writeFile ----------
+
+  it("writeFile creates a new file under outputs/", () => {
+    const b = createBrowser(projectRoot);
+    b.writeFile("outputs/F/new.md", "# new\n");
+    expect(fs.readFileSync(path.join(projectRoot, "outputs", "F", "new.md"), "utf8")).toBe("# new\n");
+  });
+
+  it("writeFile auto-creates parent directories", () => {
+    const b = createBrowser(projectRoot);
+    b.writeFile("outputs/SNDK/SNDK-assess-2026-05-07.md", "report");
+    expect(fs.readFileSync(path.join(projectRoot, "outputs", "SNDK", "SNDK-assess-2026-05-07.md"), "utf8")).toBe("report");
+  });
+
+  it("writeFile overwrites an existing file", () => {
+    const b = createBrowser(projectRoot);
+    b.writeFile("outputs/F/report.md", "replaced");
+    expect(fs.readFileSync(path.join(projectRoot, "outputs", "F", "report.md"), "utf8")).toBe("replaced");
+  });
+
+  it("writeFile rejects paths outside outputs/", () => {
+    const b = createBrowser(projectRoot);
+    expect(() => b.writeFile("data/x.csv", "x")).toThrowError(/sandbox/);
+    expect(() => b.writeFile("watchlist.md", "x")).toThrowError(/sandbox/);
+  });
+
+  it("writeFile rejects traversal", () => {
+    const b = createBrowser(projectRoot);
+    expect(() => b.writeFile("outputs/../secret.csv", "x")).toThrowError(/sandbox/);
+  });
+
+  it("writeFile rejects absolute paths", () => {
+    const b = createBrowser(projectRoot);
+    expect(() => b.writeFile("/tmp/escape.md", "x")).toThrowError(/sandbox/);
+  });
+
+  it("writeFile rejects content exceeding the size cap", () => {
+    const b = createBrowser(projectRoot);
+    const big = "x".repeat(6 * 1_048_576);
+    expect(() => b.writeFile("outputs/big.md", big)).toThrowError(/content_too_large/);
+  });
+
+  it("writeFile blocks symlink escape (parent dir is symlink to outside)", () => {
+    // Replace outputs/F with a symlink to a dir outside the sandbox
+    const escapeTarget = fs.mkdtempSync(path.join(os.tmpdir(), "cockpit-escape-"));
+    try {
+      fs.rmSync(path.join(projectRoot, "outputs", "F"), { recursive: true });
+      fs.symlinkSync(escapeTarget, path.join(projectRoot, "outputs", "F"));
+      const b = createBrowser(projectRoot);
+      expect(() => b.writeFile("outputs/F/report.md", "leak")).toThrowError(/sandbox/);
+    } finally {
+      fs.rmSync(escapeTarget, { recursive: true, force: true });
+    }
+  });
 });

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const MAX_BYTES = 1_048_576; // 1 MB
+const MAX_WRITE_BYTES = 5 * 1_048_576; // 5 MB cap on writeFile content
 
 export type Entry = { name: string; kind: "file" | "dir"; size?: number };
 export type Listing = { entries: Entry[] };
@@ -10,6 +11,10 @@ export type ReadResult = { content: string; truncated: boolean };
 export interface FilesBrowser {
   list(rel: string): Listing;
   read(rel: string): ReadResult;
+  /** Create a directory under outputs/ (recursive, idempotent). */
+  mkdir(rel: string): void;
+  /** Write a file under outputs/ (auto-creates parent dirs, overwrites). */
+  writeFile(rel: string, content: string): void;
 }
 
 export function createBrowser(projectRoot: string): FilesBrowser {
@@ -108,5 +113,61 @@ export function createBrowser(projectRoot: string): FilesBrowser {
         fs.closeSync(fd);
       }
     },
+
+    mkdir(rel: string): void {
+      const abs = resolveWritablePath(rel);
+      fs.mkdirSync(abs, { recursive: true });
+    },
+
+    writeFile(rel: string, content: string): void {
+      if (typeof content !== "string") {
+        throw new Error("invalid_content");
+      }
+      if (Buffer.byteLength(content, "utf8") > MAX_WRITE_BYTES) {
+        throw new Error("content_too_large");
+      }
+      const abs = resolveWritablePath(rel);
+      const parent = path.dirname(abs);
+      // Auto-create parent dirs (only matters when caller skipped mkdir).
+      // The realpath check inside resolveWritablePath has already verified
+      // the deepest existing ancestor is inside outputs/, so creating
+      // intermediate dirs cannot escape.
+      fs.mkdirSync(parent, { recursive: true });
+      fs.writeFileSync(abs, content, "utf8");
+    },
   };
+
+  /**
+   * Resolve a path for writing/mkdir. Stricter than the read path:
+   *   - Only outputs/ is writable; watchlist.md is NOT (machine-rendered).
+   *   - Path may not exist yet, but the deepest existing ancestor's realpath
+   *     must be inside outputs/. This blocks "outputs/foo" where foo is a
+   *     pre-existing symlink to /tmp/etc.
+   */
+  function resolveWritablePath(rel: string): string {
+    if (path.isAbsolute(rel)) {
+      throw new Error("sandbox_violation: absolute paths not permitted");
+    }
+    const cleaned = rel.replace(/^\/+/, "");
+    if (!cleaned || cleaned === ".") {
+      throw new Error("path_required");
+    }
+    const candidate = path.resolve(rootReal, cleaned);
+    // Static check: candidate must be lexically inside outputs/.
+    if (!(candidate === outputsRoot || candidate.startsWith(outputsRoot + path.sep))) {
+      throw new Error(`sandbox_violation: writes only permitted under outputs/`);
+    }
+    // Realpath check on the deepest existing ancestor catches symlink escape.
+    let probe = candidate;
+    while (!fs.existsSync(probe)) {
+      const parent = path.dirname(probe);
+      if (parent === probe) throw new Error("no_existing_ancestor");
+      probe = parent;
+    }
+    const probeReal = fs.realpathSync(probe);
+    if (!(probeReal === outputsRoot || probeReal.startsWith(outputsRoot + path.sep))) {
+      throw new Error(`sandbox_violation: ancestor escapes via symlink`);
+    }
+    return candidate;
+  }
 }

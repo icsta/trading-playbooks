@@ -74,6 +74,46 @@ Use real values, not placeholders. If a field genuinely doesn't apply (e.g., `pr
 
 If Obsidian isn't pointed at `/outputs/`, frontmatter and chart blocks still render as plain markdown elsewhere, but Dataview queries won't run and charts won't render.
 
+## Writing under outputs/ from the Trading Cockpit
+
+If the env var `COCKPIT_PORT` is set, you are running inside the locally-hosted Trading Cockpit web app, which spawns me with `claude -p`. In that mode, claude's sandbox blocks `mkdir` and direct file creation outside the cwd — including `outputs/` subdirectories. **Use the cockpit's HTTP API for writes; do NOT try `mkdir`, `Write`, or `Edit` to create new files under outputs/.**
+
+Endpoints (all on `http://127.0.0.1:$COCKPIT_PORT`, JSON request/response):
+- `POST /api/files/mkdir` — body `{"path":"outputs/<TICKER>"}` — recursive, idempotent.
+- `POST /api/files/write` — body `{"path":"outputs/<TICKER>/<file>.md","content":"…"}` — overwrites; auto-creates parent dirs; sandboxed to `outputs/`.
+- `GET /api/files/content?path=outputs/<TICKER>/<file>.md` — fetch back to confirm.
+
+Write recipe — heredoc into a shell variable, then jq for JSON-safe encoding:
+
+```bash
+# Single-quoted heredoc tag prevents $-expansion inside the report content.
+content=$(cat <<'REPORT_END'
+---
+ticker: F
+date: 2026-05-07
+skill: assess-company
+verdict: HOLD
+price: 11.50
+tags: [research]
+---
+
+# F report
+
+…full markdown body here…
+REPORT_END
+)
+
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg p 'outputs/F/F-assess-company-2026-05-07.md' \
+              --arg c "$content" \
+              '{path:$p, content:$c}')" \
+  "http://127.0.0.1:$COCKPIT_PORT/api/files/write"
+```
+
+The `mkdir` step is optional — `write` auto-creates parent dirs — but useful for an empty-folder placeholder.
+
+When `COCKPIT_PORT` is **not** set (i.e., you're running interactively from the terminal, not through the cockpit), this section does not apply: use normal `Write` / `mkdir` directly.
+
 ## Constraints
 - Never recommend a single position exceed 15% of total portfolio without flagging the concentration risk
 - Always note if a recommendation would require taxable-account action that could trigger short-term capital gains
