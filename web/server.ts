@@ -51,7 +51,10 @@ function writeMcpConfig(projectRoot: string): string {
 async function main() {
   const projectRoot = resolveProjectRoot();
   const mcpConfigPath = writeMcpConfig(projectRoot);
-  const app = next({ dev, dir: process.cwd(), hostname: HOST, port: PORT });
+  // Turbopack (default in Next 16) leaks worker processes when paired with a
+  // custom server — observed 24GB RAM + swap blowup after a single page load.
+  // Falling back to webpack for stability until Next + Turbopack mature.
+  const app = next({ dev, dir: process.cwd(), hostname: HOST, port: PORT, turbopack: false });
   await app.prepare();
   const handle = app.getRequestHandler();
   const nextUpgrade = app.getUpgradeHandler();

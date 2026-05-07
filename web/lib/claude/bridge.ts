@@ -72,10 +72,16 @@ export class ClaudeBridge extends EventEmitter<BridgeEventMap> {
     const env = { ...process.env, ...this.opts.env };
     delete env.CLAUDECODE;
 
+    // detached:true makes the spawned claude the leader of a new process group,
+    // which lets us kill the whole tree (claude + any MCP child it spawns) by
+    // signaling -PID. Without this, if claude is SIGKILL'd, its MCP server
+    // child (a tsx process loading esbuild ~150MB) gets reparented to PID 1
+    // and leaks until the cockpit itself exits.
     this.proc = spawn(command, args, {
       cwd: this.opts.cwd,
       env,
       stdio: ["pipe", "pipe", "pipe"],
+      detached: true,
     });
     this.generating = true;
 
@@ -108,11 +114,9 @@ export class ClaudeBridge extends EventEmitter<BridgeEventMap> {
     this.startHangTimer();
   }
 
-  /** Forcibly terminate the in-flight subprocess (if any). */
+  /** Forcibly terminate the in-flight subprocess (if any) and any descendants. */
   cancel(): void {
-    if (this.proc) {
-      try { this.proc.kill("SIGTERM"); } catch { /* ignore */ }
-    }
+    if (this.proc) killProcessTree(this.proc.pid, "SIGTERM");
   }
 
   async stop(graceMs = 5000): Promise<void> {
@@ -121,11 +125,9 @@ export class ClaudeBridge extends EventEmitter<BridgeEventMap> {
     const proc = this.proc;
     return new Promise((resolve) => {
       proc.once("exit", () => resolve());
-      try { proc.kill("SIGTERM"); } catch { /* ignore */ }
+      killProcessTree(proc.pid, "SIGTERM");
       setTimeout(() => {
-        if (proc.exitCode === null) {
-          try { proc.kill("SIGKILL"); } catch { /* ignore */ }
-        }
+        if (proc.exitCode === null) killProcessTree(proc.pid, "SIGKILL");
       }, graceMs);
     });
   }
@@ -147,12 +149,12 @@ export class ClaudeBridge extends EventEmitter<BridgeEventMap> {
     this.hangTimer = setTimeout(() => {
       if (this.generating) {
         this.emit("hang_timeout");
-        // Kill it
+        // Kill the whole process tree (claude + any MCP child)
         if (this.proc) {
-          try { this.proc.kill("SIGTERM"); } catch { /* ignore */ }
+          killProcessTree(this.proc.pid, "SIGTERM");
           setTimeout(() => {
             if (this.proc && this.proc.exitCode === null) {
-              try { this.proc.kill("SIGKILL"); } catch { /* ignore */ }
+              killProcessTree(this.proc.pid, "SIGKILL");
             }
           }, 2_000);
         }
@@ -165,5 +167,22 @@ export class ClaudeBridge extends EventEmitter<BridgeEventMap> {
       clearTimeout(this.hangTimer);
       this.hangTimer = null;
     }
+  }
+}
+
+/**
+ * Kill a process group by signaling -PID. Falls back to a direct kill if the
+ * pid isn't a group leader (e.g., spawn happened without detached). Errors
+ * (ESRCH if already dead, EPERM if reparented) are swallowed — best effort.
+ */
+function killProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
+  if (typeof pid !== "number") return;
+  try {
+    // Negative pid = process group; requires the spawn to have used detached:true
+    process.kill(-pid, signal);
+  } catch {
+    try {
+      process.kill(pid, signal);
+    } catch { /* ignore */ }
   }
 }
